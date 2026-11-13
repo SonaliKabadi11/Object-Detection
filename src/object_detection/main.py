@@ -1,8 +1,7 @@
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import gradio as gr
 from PIL import Image, ImageDraw
-from huggingface_hub import snapshot_download
 from transformers import Pipeline, pipeline
 
 
@@ -34,14 +33,24 @@ def draw_detections(image: Image.Image, detections: list[Detection]) -> Image.Im
     return annotated_image
 
 
-def create_interface(detector: Pipeline) -> gr.Interface:
+def create_interface(detector: Pipeline, text_to_speech: Pipeline) -> gr.Interface:
     def detect_objects(
         image: Image.Image | None,
-    ) -> tuple[Image.Image, list[list[str | float | int]]]:
+    ) -> tuple[Image.Image, list[list[str | float | int]], tuple[int, Any]]:
         if image is None:
             raise gr.Error("Please upload an image.")
 
         detections = detector(image.convert("RGB"))
+        categories = sorted({detection["label"] for detection in detections})
+        summary = (
+            f"I detected {len(detections)} objects. The categories are {', '.join(categories)}. "
+            "See the table for confidence scores and bounding-box coordinates."
+            if detections
+            else "I did not detect any objects."
+        )
+        audio_result = text_to_speech(summary)
+        audio = (audio_result["sampling_rate"], audio_result["audio"].squeeze(0))
+
         rows = [
             [
                 detection["label"],
@@ -53,8 +62,8 @@ def create_interface(detector: Pipeline) -> gr.Interface:
             ]
             for detection in detections
         ]
-        
-        return draw_detections(image, detections), rows
+
+        return draw_detections(image, detections), rows, audio
 
     return gr.Interface(
         fn=detect_objects,
@@ -67,19 +76,18 @@ def create_interface(detector: Pipeline) -> gr.Interface:
                 label="Detected objects",
                 interactive=False,
             ),
+            gr.Audio(label="Summary Audio"),
         ],
         title="Object Detection",
-        description="Upload an image to view detected objects, bounding boxes, and confidence scores.",
+        description="Upload an image to see automatically detected objects and hear a spoken summary.",
     )
 
 
 def main() -> None:
-    model_path = snapshot_download(
-        "facebook/detr-resnet-50",
-        local_files_only=True,
-    )
-    detector = pipeline("object-detection", model=model_path)
-    app = create_interface(detector)
+    detector = pipeline("object-detection", model="PekingU/rtdetr_r50vd_coco_o365")
+    text_to_speech = pipeline("text-to-speech", model="facebook/mms-tts-eng")
+    app = create_interface(detector, text_to_speech)
+
     app.launch(server_name="127.0.0.1", share=False, inbrowser=False)
 
 

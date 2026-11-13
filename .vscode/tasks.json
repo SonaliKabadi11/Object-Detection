@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Object Detection",
+			"type": "shell",
+			"command": "uv",
+			"args": [
+				"run",
+				"object-detection"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}
